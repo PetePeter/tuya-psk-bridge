@@ -3,7 +3,7 @@ FROM python:3.10-slim AS builder
 WORKDIR /build
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libssl-dev && \
+    apt-get install -y --no-install-recommends build-essential git libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY bridge/pyproject.toml ./pyproject.toml

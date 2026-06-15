@@ -27,6 +27,10 @@ class TestDockerfile:
         dockerfile = ROOT_DOCKERFILE.read_text()
         assert "jq" in dockerfile
 
+    def test_dockerfile_installs_git_for_sslpsk_source_dependency(self) -> None:
+        dockerfile = ROOT_DOCKERFILE.read_text()
+        assert "git" in dockerfile
+
     def test_dockerfile_copies_package_before_pip_install(self) -> None:
         """Package source must be copied before pip install."""
         dockerfile = ROOT_DOCKERFILE.read_text()
@@ -110,9 +114,7 @@ class TestPackageStructure:
 
     def test_pyproject_has_sslpsk(self) -> None:
         pyproject = (BRIDGE_ROOT / "pyproject.toml").read_text()
-        assert "sslpsk" in pyproject, (
-            "sslpsk must be declared as a dependency in pyproject.toml"
-        )
+        assert "github.com/drbild/sslpsk.git" in pyproject
 
     def test_ha_mqtt_module_exists(self) -> None:
         assert (BRIDGE_ROOT / "tuya_psk_bridge" / "ha_mqtt.py").exists()
