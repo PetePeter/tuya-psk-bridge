@@ -207,6 +207,21 @@ def _extract_device_id_from_client_id(client_id: str) -> str | None:
     return None
 
 
+def _packet_type_name(packet_type: int) -> str:
+    """Return a safe display name for an MQTT control packet type."""
+    names = {
+        _MQTT_CONNECT: "CONNECT",
+        _MQTT_CONNACK: "CONNACK",
+        _MQTT_PUBLISH: "PUBLISH",
+        _MQTT_SUBSCRIBE: "SUBSCRIBE",
+        _MQTT_SUBACK: "SUBACK",
+        _MQTT_PINGREQ: "PINGREQ",
+        _MQTT_PINGRESP: "PINGRESP",
+        _MQTT_DISCONNECT: "DISCONNECT",
+    }
+    return names.get(packet_type, f"UNKNOWN_0x{packet_type:02X}")
+
+
 # ---------------------------------------------------------------------------
 # PskMqttServer
 # ---------------------------------------------------------------------------
@@ -390,6 +405,7 @@ class PskMqttServer:
         # Send CONNACK (session_present=0, return_code=0)
         try:
             session.sock.sendall(bytes([0x20, 0x02, 0x00, 0x00]))
+            logger.debug("Sent CONNACK to device_id=%s", session.device_id or "<unknown>")
         except OSError as exc:
             logger.warning("Failed to send CONNACK: %s", exc)
 
@@ -416,6 +432,11 @@ class PskMqttServer:
                         0x00,
                     ]
                 )
+            )
+            logger.debug(
+                "Sent SUBACK packet_id=%d to device_id=%s",
+                response_packet_id,
+                session.device_id or "<unknown>",
             )
         except OSError as exc:
             logger.warning("Failed to send SUBACK: %s", exc)
@@ -456,6 +477,13 @@ class PskMqttServer:
             return
 
         # We have a complete packet.  Process it.
+        logger.debug(
+            "MQTT packet received type=%s remaining_len=%d total_len=%d buffered=%d",
+            _packet_type_name(packet_type),
+            remaining_len,
+            total_len,
+            len(session.buffer),
+        )
         if packet_type == _MQTT_CONNECT:
             self._handle_connect(session)
         elif packet_type == _MQTT_SUBSCRIBE:
@@ -531,6 +559,11 @@ class PskMqttServer:
         try:
             data = sock.recv(4096)
             if data:
+                logger.debug(
+                    "Read %d byte(s) from device_id=%s",
+                    len(data),
+                    session.device_id or "<unknown>",
+                )
                 session.buffer.extend(data)
                 # Process all complete packets in the buffer.
                 while session.buffer:
@@ -543,6 +576,10 @@ class PskMqttServer:
                         break
             else:
                 # Connection closed (battery device done or network drop).
+                logger.debug(
+                    "TLS session returned EOF for device_id=%s",
+                    session.device_id or "<unknown>",
+                )
                 self._close_session(session)
         except ssl.SSLEOFError:
             # Battery devices often disconnect without a proper TLS close_notify.
