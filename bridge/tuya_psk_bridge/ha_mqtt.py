@@ -244,6 +244,7 @@ class HaMqttPublisher:
         self,
         _client: mqtt.Client,
         _userdata: Any,
+        _disconnect_flags: Any,
         _reason_code: Any,
         _properties: Any,
     ) -> None:
