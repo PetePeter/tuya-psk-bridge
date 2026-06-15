@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from tuya_psk_bridge.models import BridgeConfig, DeviceConfig, DeviceMapping
+from tuya_psk_bridge.server import (
+    PskMqttServer,
+    _parse_mqtt_connect,
+    _parse_mqtt_subscribe,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +149,48 @@ class TestDeviceConfig:
             DeviceMapping(dps="2", platform="sensor")
         )
         assert len(device.mappings) == 1
+
+
+class TestMqttPacketDispatch:
+    def test_connect_parser_uses_fixed_header_length(self):
+        packet = (
+            b"\x10\x20"
+            b"\x00\x04MQTT"
+            b"\x04"
+            b"\x02"
+            b"\x00\x3c"
+            b"\x00\x14"
+            b"0123456789abcdefabcd"
+        )
+
+        assert _parse_mqtt_connect(packet) == "0123456789abcdefabcd"
+
+    def test_subscribe_parser_uses_packet_id_and_fixed_header_length(self):
+        packet = (
+            b"\x82\x25"
+            b"\x12\x34"
+            b"\x00\x24"
+            b"smart/device/in/0123456789abcdefabcd"
+            b"\x00"
+        )
+
+        assert _parse_mqtt_subscribe(packet) == (
+            0x1234,
+            "smart/device/in/0123456789abcdefabcd",
+        )
+
+    def test_subscribe_fixed_header_dispatches_after_type_mask(self):
+        """SUBSCRIBE is 0x82 on the wire, but dispatch masks it to 0x80."""
+        server = object.__new__(PskMqttServer)
+        session = SimpleNamespace(buffer=bytearray([0x82, 0x00]))
+        called = []
+
+        def handle_subscribe(received_session):
+            called.append(received_session)
+
+        server._handle_subscribe = handle_subscribe
+
+        PskMqttServer._process_buffer(server, session)
+
+        assert called == [session]
+        assert session.buffer == bytearray()

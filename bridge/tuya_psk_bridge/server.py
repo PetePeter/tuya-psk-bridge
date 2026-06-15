@@ -55,7 +55,10 @@ except ImportError:
 _MQTT_CONNECT = 0x10
 _MQTT_CONNACK = 0x20
 _MQTT_PUBLISH = 0x30
-_MQTT_SUBSCRIBE = 0x82
+# Packet routing masks the fixed header down to the control packet type nibble.
+# SUBSCRIBE packets have required flags 0x02 on the wire, so 0x82 becomes 0x80
+# after masking.
+_MQTT_SUBSCRIBE = 0x80
 _MQTT_SUBACK = 0x90
 _MQTT_PINGREQ = 0xC0
 _MQTT_PINGRESP = 0xD0
@@ -108,7 +111,8 @@ def _parse_mqtt_connect(data: bytes) -> str | None:
     Returns the client ID string, or None if parsing fails.
     """
     try:
-        _, offset = _decode_remaining_length(data, 1)
+        _, header_len = _decode_remaining_length(data, 1)
+        offset = 1 + header_len
         # Protocol name (2-byte length + string)
         proto_len = struct.unpack_from("!H", data, offset)[0]
         offset += 2 + proto_len  # skip protocol name
@@ -125,23 +129,26 @@ def _parse_mqtt_connect(data: bytes) -> str | None:
         return None
 
 
-def _parse_mqtt_subscribe(data: bytes) -> str | None:
+def _parse_mqtt_subscribe(data: bytes) -> tuple[int | None, str | None]:
     """Extract the first topic filter from a SUBSCRIBE packet.
 
-    Returns the topic filter string, or None if parsing fails.
+    Returns (packet_id, topic_filter), or (None, None) if parsing fails.
     """
     try:
-        _, offset = _decode_remaining_length(data, 1)
+        _, header_len = _decode_remaining_length(data, 1)
+        offset = 1 + header_len
         # Packet identifier (2 bytes)
+        packet_id = struct.unpack_from("!H", data, offset)[0]
         offset += 2
         # Topic filter (2-byte length + string)
         topic_len = struct.unpack_from("!H", data, offset)[0]
         offset += 2
         if offset + topic_len > len(data):
-            return None
-        return data[offset : offset + topic_len].decode("utf-8", errors="replace")
+            return None, None
+        topic = data[offset : offset + topic_len].decode("utf-8", errors="replace")
+        return packet_id, topic
     except (struct.error, ValueError, IndexError):
-        return None
+        return None, None
 
 
 def _parse_mqtt_publish(data: bytes) -> tuple[str | None, bytes | None]:
@@ -388,7 +395,7 @@ class PskMqttServer:
 
     def _handle_subscribe(self, session: _DeviceSession) -> None:
         """Process a SUBSCRIBE packet: extract topic, update device_id, send SUBACK."""
-        topic = _parse_mqtt_subscribe(bytes(session.buffer))
+        packet_id, topic = _parse_mqtt_subscribe(bytes(session.buffer))
         if topic:
             device_id = _extract_device_id_from_topic(topic)
             if device_id and session.device_id != device_id:
@@ -398,7 +405,18 @@ class PskMqttServer:
         # Send SUBACK with QoS 0 granted for the first topic filter
         try:
             # Minimal SUBACK: header(0x90), remaining_len, packet_id(x2), return_code(0)
-            session.sock.sendall(bytes([0x90, 0x03, 0x00, 0x01, 0x00]))
+            response_packet_id = packet_id if packet_id is not None else 1
+            session.sock.sendall(
+                bytes(
+                    [
+                        0x90,
+                        0x03,
+                        (response_packet_id >> 8) & 0xFF,
+                        response_packet_id & 0xFF,
+                        0x00,
+                    ]
+                )
+            )
         except OSError as exc:
             logger.warning("Failed to send SUBACK: %s", exc)
 
