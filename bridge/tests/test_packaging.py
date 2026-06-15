@@ -46,9 +46,10 @@ class TestDockerfile:
         dockerfile = ROOT_DOCKERFILE.read_text()
         assert "EXPOSE" in dockerfile
 
-    def test_dockerfile_uses_python_311_for_sslpsk(self) -> None:
+    def test_dockerfile_uses_python_310_for_sslpsk(self) -> None:
         dockerfile = ROOT_DOCKERFILE.read_text()
-        assert "python:3.11-slim" in dockerfile
+        assert "python:3.10-slim" in dockerfile
+        assert "python:3.11-slim" not in dockerfile
         assert "python:3.12-slim" not in dockerfile
 
 
