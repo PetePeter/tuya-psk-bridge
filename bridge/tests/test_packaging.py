@@ -31,6 +31,10 @@ class TestDockerfile:
         dockerfile = ROOT_DOCKERFILE.read_text()
         assert "git" in dockerfile
 
+    def test_dockerfile_installs_prebuilt_wheels_without_runtime_git(self) -> None:
+        dockerfile = ROOT_DOCKERFILE.read_text()
+        assert "pip install --no-cache-dir --no-deps /wheels/*.whl" in dockerfile
+
     def test_dockerfile_copies_package_before_pip_install(self) -> None:
         """Package source must be copied before pip install."""
         dockerfile = ROOT_DOCKERFILE.read_text()

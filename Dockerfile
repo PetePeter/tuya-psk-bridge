@@ -20,7 +20,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+RUN pip install --no-cache-dir --no-deps /wheels/*.whl && rm -rf /wheels
 
 COPY addon/run.sh /run.sh
 RUN chmod +x /run.sh
