@@ -160,7 +160,10 @@ DEVBLOCK
         if [[ -n "${VALUES}" && "${VALUES}" != "null" ]]; then
             VALUES_TYPE=$(jq -r ".devices[${i}].mappings[${j}].values | type" "${OPTIONS_PATH}")
             if [[ "${VALUES_TYPE}" == "string" ]]; then
-                VALUES=$(jq -r ".devices[${i}].mappings[${j}].values" "${OPTIONS_PATH}" | jq -c 'fromjson')
+                # values arrives as a JSON-encoded string; parse it to an object
+                # directly on the node (piping `jq -r` into a second jq would make
+                # the second jq read an object, and fromjson rejects non-strings).
+                VALUES=$(jq -c ".devices[${i}].mappings[${j}].values | fromjson" "${OPTIONS_PATH}")
             fi
             echo "        values: ${VALUES}" >> "${CONFIG_PATH}"
         fi
