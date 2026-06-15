@@ -8,5 +8,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/PetePeter/tuya-psk-bridge/issues",
   "requirements": ["pycryptodomex>=3.20", "paho-mqtt>=2.0", "pyyaml>=6.0"],
-  "version": "0.1.4"
+  "version": "0.1.5"
 }

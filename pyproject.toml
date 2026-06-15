@@ -1,6 +1,6 @@
 [project]
 name = "tuya-psk-bridge"
-version = "0.1.4"
+version = "0.1.5"
 description = "Local bridge that intercepts TLS-PSK connections from Tuya/Smart Life Wi-Fi devices and exposes their state to Home Assistant"
 requires-python = ">=3.10"
 license = {text = "MIT"}

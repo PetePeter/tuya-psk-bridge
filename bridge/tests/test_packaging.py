@@ -115,6 +115,7 @@ class TestPackageStructure:
     def test_pyproject_has_sslpsk(self) -> None:
         pyproject = (BRIDGE_ROOT / "pyproject.toml").read_text()
         assert "github.com/drbild/sslpsk.git" in pyproject
+        assert "allow-direct-references = true" in pyproject
 
     def test_ha_mqtt_module_exists(self) -> None:
         assert (BRIDGE_ROOT / "tuya_psk_bridge" / "ha_mqtt.py").exists()
