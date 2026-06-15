@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
@@ -11,7 +11,7 @@ COPY bridge/tuya_psk_bridge/ ./tuya_psk_bridge/
 
 RUN pip wheel --no-cache-dir --wheel-dir /wheels .
 
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 

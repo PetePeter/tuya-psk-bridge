@@ -46,6 +46,11 @@ class TestDockerfile:
         dockerfile = ROOT_DOCKERFILE.read_text()
         assert "EXPOSE" in dockerfile
 
+    def test_dockerfile_uses_python_311_for_sslpsk(self) -> None:
+        dockerfile = ROOT_DOCKERFILE.read_text()
+        assert "python:3.11-slim" in dockerfile
+        assert "python:3.12-slim" not in dockerfile
+
 
 class TestAddonConfig:
     """Validate HA add-on config.yaml structure."""

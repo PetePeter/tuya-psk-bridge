@@ -1,5 +1,5 @@
 name: Tuya PSK Bridge
-version: "0.1.1"
+version: "0.1.2"
 slug: tuya_psk_bridge
 description: >-
   Local bridge that accepts Tuya/Smart Life TLS-PSK device traffic and exposes
