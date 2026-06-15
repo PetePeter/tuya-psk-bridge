@@ -105,10 +105,10 @@ def extract_dps(
 ) -> list[DecodedDps]:
     """Extract and optionally normalize DPS entries from the decoded data dict.
 
-    The Tuya payload typically has a top-level ``"dps"`` key whose value is a
-    dict mapping DPS IDs to raw string values.  Each entry is converted to a
-    :class:`DecodedDps`.  If ``device_mappings`` is provided and a mapping exists
-    for a given DPS ID, the ``normalized_value`` is set from the mapping's
+    Tuya reports may expose DPS either as a top-level ``"dps"`` key or nested
+    under ``"data"`` as ``{"data": {"dps": ...}}``.  Each entry is converted
+    to a :class:`DecodedDps`.  If ``device_mappings`` is provided and a mapping
+    exists for a given DPS ID, the ``normalized_value`` is set from the mapping's
     ``values`` dict; otherwise ``normalized_value`` remains ``None``.
 
     Args:
@@ -120,6 +120,8 @@ def extract_dps(
         has no ``"dps"`` key or the dps dict is empty.
     """
     dps_raw: dict[str, Any] = data.get("dps", {})
+    if not dps_raw and isinstance(data.get("data"), dict):
+        dps_raw = data["data"].get("dps", {})
     if not isinstance(dps_raw, dict) or not dps_raw:
         return []
 

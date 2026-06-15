@@ -143,6 +143,25 @@ class TestExtractDps:
         assert result[0] == DecodedDps(dps_id="1", raw_value="open", normalized_value="ON")
         assert result[1] == DecodedDps(dps_id="2", raw_value="closed", normalized_value=None)
 
+    def test_nested_data_dps_open_closed(self):
+        """Captured Tuya reports carry DPS under data.dps."""
+        mapping = DeviceMapping(
+            dps="1",
+            platform="binary_sensor",
+            device_class="door",
+            values={"open": "ON", "closed": "OFF"},
+        )
+        data = {
+            "protocol": 4,
+            "t": 2,
+            "data": {"devId": "0123456789abcdefabcd", "dps": {"1": "closed"}},
+        }
+        result = extract_dps(data, {"1": mapping})
+
+        assert result == [
+            DecodedDps(dps_id="1", raw_value="closed", normalized_value="OFF")
+        ]
+
     def test_unknown_dps_preserved(self):
         """DPS without a mapping should have normalized_value=None."""
         data = {"dps": {"101": "some_value"}}
