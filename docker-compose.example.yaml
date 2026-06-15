@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  tuya-psk-bridge:
+    build: ./bridge
+    container_name: tuya-psk-bridge
+    restart: unless-stopped
+    network_mode: host  # Required for TLS-PSK on standard ports
+    volumes:
+      - ./config:/data:rw
+    environment:
+      - TUYA_LISTEN_HOST=0.0.0.0
+      - TUYA_MQTT_PSK_PORT=8886
+      - TUYA_HA_MQTT_HOST=core-mosquitto
+      - TUYA_HA_MQTT_PORT=1883
+      - TUYA_LOG_LEVEL=INFO
+      # Secrets should be passed via mounted secrets file or env vars:
+      # - TUYA_DEVICE_0_LOCAL_KEY=your_local_key_here

@@ -1,0 +1,61 @@
+{
+  "config": {
+    "title": "Tuya PSK Bridge",
+    "step": {
+      "user": {
+        "title": "Add Tuya PSK Bridge",
+        "description": "Set up the Tuya PSK Bridge integration to manage your Tuya device configurations."
+      },
+      "device": {
+        "title": "Add Device",
+        "description": "Enter the device details from the Tuya developer portal.",
+        "data": {
+          "device_id": "Device ID",
+          "name": "Device Name",
+          "profile": "Device Profile"
+        }
+      },
+      "local_key": {
+        "title": "Enter Local Key",
+        "description": "Enter the local key for device \"{device_name}\". This is found in the Tuya IoT Platform device details.",
+        "data": {
+          "local_key": "Local Key"
+        }
+      },
+      "mappings": {
+        "title": "Configure DPS Mappings",
+        "description": "Configure which Tuya DPS (data point) maps to a Home Assistant entity.",
+        "data": {
+          "dps": "DPS Index",
+          "platform": "HA Platform",
+          "device_class": "Device Class"
+        }
+      },
+      "add_more": {
+        "title": "Add More Devices",
+        "description": "You have added {devices} device(s) so far. Would you like to add another?"
+      }
+    },
+    "error": {
+      "invalid_device_id": "Device ID must be a 20-character hex string (0-9, a-f).",
+      "empty_local_key": "Local key must not be empty."
+    },
+    "menu": {
+      "user": {
+        "device": "Add a device"
+      },
+      "add_more": {
+        "add_more_device": "Add another device",
+        "finish": "Finish setup"
+      }
+    },
+    "abort": {
+      "reconfigure_via_config_flow": "Reconfiguration via options is not yet available. Remove and re-add the integration to change devices."
+    }
+  },
+  "options": {
+    "abort": {
+      "reconfigure_via_config_flow": "Reconfiguration via options is not yet available. Remove and re-add the integration to change devices."
+    }
+  }
+}

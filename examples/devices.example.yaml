@@ -1,0 +1,32 @@
+listen:
+  host: 0.0.0.0
+  mqtt_psk_port: 8886
+ha_mqtt:
+  host: core-mosquitto
+  port: 1883
+  username: "!secret mqtt_user"
+  password: "!secret mqtt_password"
+log_level: INFO
+devices:
+  - device_id: "0123456789abcdefabcd"
+    local_key: "!secret tuya_door_1_local_key"
+    name: "Front Door"
+    profile: door_sensor
+    mappings:
+      - dps: "1"
+        platform: binary_sensor
+        device_class: door
+        values:
+          open: "ON"
+          closed: "OFF"
+  - device_id: "abcdef0123456789abcd"
+    local_key: "!secret tuya_door_2_local_key"
+    name: "Back Door"
+    profile: door_sensor
+    mappings:
+      - dps: "1"
+        platform: binary_sensor
+        device_class: door
+        values:
+          open: "ON"
+          closed: "OFF"

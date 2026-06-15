@@ -1,0 +1,44 @@
+name: Tuya PSK Bridge
+version: "0.1.0"
+slug: tuya-psk-bridge
+description: >-
+  Local bridge that intercepts TLS-PSK connections from Tuya/Smart Life Wi-Fi
+  devices and exposes their state to Home Assistant via MQTT discovery.
+url: "https://github.com/YOUR_USERNAME/tuya-psk-bridge"
+arch:
+  - amd64
+  - aarch64
+  - armhf
+  - armv7
+image: "YOUR_DOCKERHUB_USERNAME/tuya-psk-bridge-{arch}"
+init: false
+map:
+  - share:rw
+options:
+  listen_host: "0.0.0.0"
+  mqtt_psk_port: 8886
+  ha_mqtt_host: "core-mosquitto"
+  ha_mqtt_port: 1883
+  ha_mqtt_username: ""
+  ha_mqtt_password: ""
+  log_level: "INFO"
+  devices: []
+schema:
+  listen_host: str
+  mqtt_psk_port: port
+  ha_mqtt_host: str
+  ha_mqtt_port: port
+  ha_mqtt_username: str?
+  ha_mqtt_password: str?
+  log_level: list(INFO|DEBUG|WARNING|ERROR)
+  devices:
+    - device_id: str
+      local_key: str
+      name: str
+      profile: str
+      mappings:
+        - dps: str
+          platform: str
+          device_class: str?
+          values: match(^.*$)
+startup: services
