@@ -8,8 +8,6 @@ url: "https://github.com/PetePeter/tuya-psk-bridge"
 arch:
   - amd64
   - aarch64
-  - armhf
-  - armv7
 init: false
 boot: auto
 ports:
@@ -44,5 +42,5 @@ schema:
         - dps: str
           platform: str
           device_class: str?
-          values: dict?
+          values: str?
 startup: services

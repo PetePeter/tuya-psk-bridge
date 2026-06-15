@@ -158,6 +158,10 @@ DEVBLOCK
             echo "        device_class: \"${DEVICE_CLASS}\"" >> "${CONFIG_PATH}"
         fi
         if [[ -n "${VALUES}" && "${VALUES}" != "null" ]]; then
+            VALUES_TYPE=$(jq -r ".devices[${i}].mappings[${j}].values | type" "${OPTIONS_PATH}")
+            if [[ "${VALUES_TYPE}" == "string" ]]; then
+                VALUES=$(jq -r ".devices[${i}].mappings[${j}].values" "${OPTIONS_PATH}" | jq -c 'fromjson')
+            fi
             echo "        values: ${VALUES}" >> "${CONFIG_PATH}"
         fi
     done

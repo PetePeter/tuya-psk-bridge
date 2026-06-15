@@ -71,7 +71,7 @@ Each device in the `devices` array requires:
       "dps": "1",
       "platform": "binary_sensor",
       "device_class": "door",
-      "values": { "true": "open", "false": "closed" }
+      "values": "{\"true\":\"open\",\"false\":\"closed\"}"
     }
   ]
 }
@@ -92,7 +92,7 @@ Each device in the `devices` array requires:
 | `dps` | Yes | Tuya data point ID (e.g. `"1"`). |
 | `platform` | Yes | HA platform (`binary_sensor`, `sensor`, etc.). |
 | `device_class` | No | HA device class (e.g. `door`, `temperature`). |
-| `values` | No | Key-value map for translating raw values. |
+| `values` | No | JSON object string for translating raw values. |
 
 ## Network Requirements
 
