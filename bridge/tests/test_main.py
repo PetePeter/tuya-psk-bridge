@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tuya_psk_bridge.main import _build_parser, main
-from tuya_psk_bridge.mqtt_runtime import _wait_for
+from tuya_psk_bridge.models import BridgeConfig, DeviceConfig
+from tuya_psk_bridge.mqtt_runtime import BridgeRuntime, _wait_for
 
 
 class TestBuildParser:
@@ -91,3 +92,61 @@ class TestWaitForPredicate:
         # Must contain lambda (callable) reference, not bare _connected
         assert "lambda:" in source
         assert "self._publisher._connected" not in source
+
+
+class TestBridgeRuntimeAvailability:
+    def test_start_publishes_online_availability(self) -> None:
+        device = DeviceConfig(
+            device_id="0123456789abcdefabcd",
+            local_key="abcdef0123456789",
+            name="Door",
+            profile="door_sensor",
+        )
+        config = BridgeConfig(
+            listen_host="127.0.0.1",
+            mqtt_psk_port=18883,
+            ha_mqtt_host="127.0.0.1",
+            ha_mqtt_port=1883,
+            ha_mqtt_username=None,
+            ha_mqtt_password=None,
+            log_level="INFO",
+            devices=[device],
+        )
+
+        with patch("tuya_psk_bridge.mqtt_runtime.HaMqttPublisher") as publisher_cls, patch(
+            "tuya_psk_bridge.mqtt_runtime.PskMqttServer"
+        ) as server_cls:
+            publisher = publisher_cls.return_value
+            publisher.connected = True
+
+            runtime = BridgeRuntime(config, psk_hint=b"hint")
+            runtime.start()
+
+            publisher.publish_availability.assert_called_once_with(device, True)
+            server_cls.return_value.start.assert_called_once()
+
+    def test_stop_publishes_offline_availability(self) -> None:
+        device = DeviceConfig(
+            device_id="0123456789abcdefabcd",
+            local_key="abcdef0123456789",
+            name="Door",
+            profile="door_sensor",
+        )
+        config = BridgeConfig(
+            listen_host="127.0.0.1",
+            mqtt_psk_port=18883,
+            ha_mqtt_host="127.0.0.1",
+            ha_mqtt_port=1883,
+            ha_mqtt_username=None,
+            ha_mqtt_password=None,
+            log_level="INFO",
+            devices=[device],
+        )
+
+        with patch("tuya_psk_bridge.mqtt_runtime.HaMqttPublisher") as publisher_cls:
+            publisher = publisher_cls.return_value
+            runtime = BridgeRuntime(config, psk_hint=b"hint")
+            runtime.stop()
+
+            publisher.publish_availability.assert_called_once_with(device, False)
+            publisher.disconnect.assert_called_once()

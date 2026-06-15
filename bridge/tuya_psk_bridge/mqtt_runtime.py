@@ -61,6 +61,8 @@ class BridgeRuntime:
         _wait_for(lambda: self._publisher.connected, timeout=5.0)
 
         self._publisher.publish_all_discovery(self._config)
+        for device in self._config.devices:
+            self._publisher.publish_availability(device, True)
 
         self._server = PskMqttServer(
             config=self._config,
@@ -80,6 +82,8 @@ class BridgeRuntime:
         if self._server:
             self._server.stop()
             self._server = None
+        for device in self._config.devices:
+            self._publisher.publish_availability(device, False)
         self._publisher.disconnect()
         logger.info("BridgeRuntime stopped")
 
