@@ -12,22 +12,24 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 BRIDGE_ROOT = PROJECT_ROOT / "bridge"
 ADDON_ROOT = PROJECT_ROOT / "addon"
+ROOT_ADDON_CONFIG = PROJECT_ROOT / "config.yaml"
+ROOT_DOCKERFILE = PROJECT_ROOT / "Dockerfile"
 
 
 class TestDockerfile:
     """Validate Dockerfile assumptions."""
 
     def test_dockerfile_exists(self) -> None:
-        assert (PROJECT_ROOT / "addon" / "Dockerfile").exists()
+        assert ROOT_DOCKERFILE.exists()
 
     def test_dockerfile_installs_jq(self) -> None:
         """Dockerfile must install jq since run.sh depends on it."""
-        dockerfile = (PROJECT_ROOT / "addon" / "Dockerfile").read_text()
+        dockerfile = ROOT_DOCKERFILE.read_text()
         assert "jq" in dockerfile
 
     def test_dockerfile_copies_package_before_pip_install(self) -> None:
         """Package source must be copied before pip install."""
-        dockerfile = (PROJECT_ROOT / "addon" / "Dockerfile").read_text()
+        dockerfile = ROOT_DOCKERFILE.read_text()
         lines = dockerfile.splitlines()
         copy_pkg = -1
         pip_install = -1
@@ -41,7 +43,7 @@ class TestDockerfile:
         )
 
     def test_dockerfile_exposes_psk_port(self) -> None:
-        dockerfile = (PROJECT_ROOT / "addon" / "Dockerfile").read_text()
+        dockerfile = ROOT_DOCKERFILE.read_text()
         assert "EXPOSE" in dockerfile
 
 
@@ -49,17 +51,26 @@ class TestAddonConfig:
     """Validate HA add-on config.yaml structure."""
 
     def test_addon_config_exists(self) -> None:
-        assert (ADDON_ROOT / "config.yaml").exists()
+        assert ROOT_ADDON_CONFIG.exists()
 
     def test_addon_config_has_devices_schema(self) -> None:
-        config = (ADDON_ROOT / "config.yaml").read_text()
+        config = ROOT_ADDON_CONFIG.read_text()
         assert "devices:" in config
         assert "device_id:" in config
         assert "local_key:" in config
 
     def test_addon_config_has_listen_options(self) -> None:
-        config = (ADDON_ROOT / "config.yaml").read_text()
+        config = ROOT_ADDON_CONFIG.read_text()
         assert "mqtt_psk_port:" in config or "listen_host:" in config
+
+    def test_addon_config_has_real_repo_metadata(self) -> None:
+        config = ROOT_ADDON_CONFIG.read_text()
+        assert "github.com/PetePeter/tuya-psk-bridge" in config
+        assert "YOUR_" not in config
+
+    def test_addon_config_exposes_psk_listener(self) -> None:
+        config = ROOT_ADDON_CONFIG.read_text()
+        assert "8886/tcp: 8886" in config
 
 
 class TestRunSh:

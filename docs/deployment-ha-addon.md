@@ -13,12 +13,31 @@ This is the preferred deployment mode for HA OS and HA Container installations.
 
 ## Installation
 
-1. Build the Docker image and push to your Docker Hub account. Update the
-   `image` field in `addon/config.yaml` with your Docker Hub username.
-2. Copy the `addon/` directory into the Home Assistant add-on repository
-   structure, or use the [HA Add-on builder][ha-builder] to publish.
-3. In Home Assistant, go to **Settings > Add-ons > Add-on Store** and
-   install the **Tuya PSK Bridge** add-on.
+### Private repo / local add-on checkout
+
+For a private repository, install the add-on from a git checkout under the
+Home Assistant `/addons` directory. The repository root contains the add-on
+`config.yaml` and `Dockerfile`, so the cloned repository itself is the local
+add-on folder:
+
+```bash
+cd /addons
+git clone https://github.com/PetePeter/tuya-psk-bridge.git tuya-psk-bridge
+```
+
+Then in Home Assistant, go to **Settings > Add-ons > Add-on Store**, refresh
+the store, open **Local apps**, and install **Tuya PSK Bridge**.
+
+### Published add-on repository
+
+If the repository is later made public or published with prebuilt images, it
+can be added through the Add-on Store repository UI using:
+
+```text
+https://github.com/PetePeter/tuya-psk-bridge
+```
+
+The local checkout path remains the preferred route while the repo is private.
 
 ## Configuration
 
@@ -79,8 +98,9 @@ Each device in the `devices` array requires:
 
 The bridge must be reachable on the Tuya TLS-PSK port by your Wi-Fi devices.
 
-- **HA OS**: The add-on runs with host networking. Ensure the `mqtt_psk_port`
-  is not blocked by firewall rules.
+- **HA OS**: The add-on exposes TCP port `8886` on the Home Assistant host by
+  default. Point router redirects at the Home Assistant host and this port, or
+  adjust the add-on Network settings and matching `mqtt_psk_port` option.
 - **HA Container**: Expose the port in your container runtime configuration.
 - **Standard ports (below 1024)**: Require host networking or port forwarding.
   The default of `8886` avoids this issue.

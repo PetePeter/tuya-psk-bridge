@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+.venv
+venv
+dist
+build
+*.egg-info
+htmlcov
+.coverage
+docker-compose.yaml
+config

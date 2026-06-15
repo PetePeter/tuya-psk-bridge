@@ -1,12 +1,12 @@
 {
   "domain": "tuya_psk_bridge",
   "name": "Tuya PSK Bridge",
-  "codeowners": ["@YOUR_USERNAME"],
+  "codeowners": ["@PetePeter"],
   "config_flow": true,
   "dependencies": ["mqtt"],
-  "documentation": "https://github.com/YOUR_USERNAME/tuya-psk-bridge",
+  "documentation": "https://github.com/PetePeter/tuya-psk-bridge",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/YOUR_USERNAME/tuya-psk-bridge/issues",
+  "issue_tracker": "https://github.com/PetePeter/tuya-psk-bridge/issues",
   "requirements": ["pycryptodomex>=3.20", "paho-mqtt>=2.0", "pyyaml>=6.0"],
   "version": "0.1.0"
 }
