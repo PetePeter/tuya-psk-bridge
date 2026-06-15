@@ -79,6 +79,10 @@ class TestRunSh:
     def test_run_sh_exists(self) -> None:
         assert (ADDON_ROOT / "run.sh").exists()
 
+    def test_no_nested_addon_metadata(self) -> None:
+        assert not (ADDON_ROOT / "config.yaml").exists()
+        assert not (ADDON_ROOT / "Dockerfile").exists()
+
     def test_run_sh_calls_python_main(self) -> None:
         run_sh = (ADDON_ROOT / "run.sh").read_text()
         assert "python -m tuya_psk_bridge.main" in run_sh
