@@ -334,7 +334,7 @@ class TestHaMqttPublisher:
         assert topic == "homeassistant/binary_sensor/tuya_psk_dev_state_1/state"
         assert msg == "ON"
         assert qos == 0
-        assert retain is False
+        assert retain is True
 
     def test_publish_state_unmapped_dps_skipped(self, publisher: HaMqttPublisher):
         """State publish is skipped when the DPS has no mapping."""

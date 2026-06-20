@@ -3,7 +3,8 @@
 Creates a :class:`PskMqttServer` for incoming Tuya TLS-PSK connections and a
 :class:`HaMqttPublisher` from :mod:`ha_mqtt` for publishing decoded events to
 Home Assistant.  Discovery configurations are published as retained messages on
-startup; state updates are published as non-retained messages on each device event.
+startup; state updates are also published retained on each device event so HA
+restores the last-known value after a restart.
 
 Lifecycle
 ---------

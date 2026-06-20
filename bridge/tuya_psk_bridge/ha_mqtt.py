@@ -129,8 +129,9 @@ class HaMqttPublisher:
     """Publishes HA MQTT discovery configs and device state updates.
 
     Uses paho-mqtt v2 API (CallbackAPIVersion.VERSION2).
-    Discovery messages are published with retain=True so HA picks them
-    up even after a broker restart.  State messages are non-retained.
+    Discovery, availability, and state messages are all published with
+    retain=True so HA recovers entity config and last-known value even
+    after an HA or broker restart.
     """
 
     def __init__(
@@ -193,7 +194,13 @@ class HaMqttPublisher:
         device_config: DeviceConfig,
         dps: DecodedDps,
     ) -> None:
-        """Publish a non-retained state update for a single DPS."""
+        """Publish a retained state update for a single DPS.
+
+        State is retained so Home Assistant restores the last known value
+        after an HA or broker restart — devices like door sensors only
+        publish on change, so a non-retained topic would leave the entity
+        ``unknown`` until the next state transition.
+        """
         mapping = self._find_mapping(device_config, dps.dps_id)
         if mapping is None:
             logger.debug(
@@ -204,7 +211,7 @@ class HaMqttPublisher:
             return
         topic = _state_topic(device_config, mapping)
         state = build_state_payload(dps)
-        self._client.publish(topic, state, qos=0, retain=False)
+        self._client.publish(topic, state, qos=0, retain=True)
 
     def publish_availability(self, device_config: DeviceConfig, available: bool) -> None:
         """Publish device availability to the shared availability topic."""
