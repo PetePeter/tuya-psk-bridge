@@ -39,6 +39,60 @@ https://github.com/PetePeter/tuya-psk-bridge
 
 The local checkout path remains the preferred route while the repo is private.
 
+## Updating a deployed add-on
+
+The add-on is a git checkout under `/addons/local/tuya-psk-bridge` (slug
+`local_tuya_psk_bridge`). To roll out a new commit, pull the latest code on the
+box and rebuild the add-on. Use the **Advanced SSH & Web Terminal** add-on:
+
+```bash
+# 1. Pull latest master (the checkout is root-owned, so use sudo)
+cd /addons/local/tuya-psk-bridge
+sudo git config --global --add safe.directory /addons/local/tuya-psk-bridge
+sudo git fetch origin && sudo git reset --hard origin/master
+
+# 2. Rebuild + restart. The `ha` CLI has no token in the SSH shell, so feed it
+#    the supervisor token. Note: `ha apps` (the `addons` command is deprecated).
+TOK=$(sudo cat /run/s6/container_environment/HASSIO_TOKEN)
+SUPERVISOR_TOKEN=$TOK ha apps rebuild local_tuya_psk_bridge
+```
+
+The rebuild takes ~1–3 minutes and auto-restarts the add-on. Verify with
+`SUPERVISOR_TOKEN=$TOK ha apps info local_tuya_psk_bridge | grep '^state'`.
+
+### Gotchas
+
+- The Home Assistant **File editor** add-on is scoped to `/homeassistant` and
+  returns *"Access denied"* for `/addons`, so it cannot push add-on code — use
+  SSH.
+- Rebuilding through the Supervisor WebSocket `supervisor/api` proxy returns
+  `unknown_error` (the build outlasts the call). Use the `ha` CLI instead.
+- MQTT **state** is published retained, so Home Assistant restores the last
+  known value after a restart. Retained messages do **not** backfill: an entity
+  fills its value on its next state change, then persists across restarts.
+
+### Convenience script
+
+For a single-command rollout, drop this on the box (e.g. `/config/rebuild-bridge.sh`)
+and run `bash /config/rebuild-bridge.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Rebuild the Tuya PSK Bridge add-on from latest git master.
+set -e
+DIR=/addons/local/tuya-psk-bridge
+SLUG=local_tuya_psk_bridge
+echo "==> Pulling latest code..."
+sudo git config --global --add safe.directory "$DIR" 2>/dev/null || true
+sudo git -C "$DIR" fetch origin
+sudo git -C "$DIR" reset --hard origin/master
+echo "==> Rebuilding add-on (1-3 min)..."
+TOK=$(sudo cat /run/s6/container_environment/HASSIO_TOKEN)
+SUPERVISOR_TOKEN=$TOK ha apps rebuild "$SLUG"
+echo "==> Done. State:"
+SUPERVISOR_TOKEN=$TOK ha apps info "$SLUG" | grep "^state"
+```
+
 ## Configuration
 
 Configure the add-on through **Settings > Add-ons > Tuya PSK Bridge > Configuration**.
