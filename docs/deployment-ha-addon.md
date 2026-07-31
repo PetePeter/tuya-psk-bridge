@@ -125,11 +125,17 @@ Each device in the `devices` array requires:
       "dps": "1",
       "platform": "binary_sensor",
       "device_class": "door",
-      "values": "{\"true\":\"open\",\"false\":\"closed\"}"
+      "values": "{\"open\":\"ON\",\"closed\":\"OFF\"}"
     }
   ]
 }
 ```
+
+> **`values` keys are the raw values the device reports, not booleans.** A Tuya
+> door sensor reports DPS 1 as the strings `open` / `closed`, so those are the
+> keys. Getting this wrong fails silently: the add-on log shows
+> `Published state ... (raw=closed, norm=None)` and the HA entity sits at
+> `unknown` forever.
 
 | Field | Required | Description |
 |---|---|---|
@@ -146,7 +152,12 @@ Each device in the `devices` array requires:
 | `dps` | Yes | Tuya data point ID (e.g. `"1"`). |
 | `platform` | Yes | HA platform (`binary_sensor`, `sensor`, etc.). |
 | `device_class` | No | HA device class (e.g. `door`, `temperature`). |
-| `values` | No | JSON object string for translating raw values. |
+| `values` | No* | JSON object string mapping **raw device value → published payload**. |
+
+\* Optional for the parser, but effectively required for `binary_sensor`: the
+discovery config takes `payload_on` from `values["open"]` and `payload_off` from
+`values["closed"]`, so those two keys must be present or HA gets no payloads to
+match against.
 
 ## Network Requirements
 
@@ -246,6 +257,9 @@ as a standalone container.
          - dps: "1"
            platform: "binary_sensor"
            device_class: "door"
+           values:
+             open: "ON"
+             closed: "OFF"
    ```
 
 4. Set secrets via environment variables:
