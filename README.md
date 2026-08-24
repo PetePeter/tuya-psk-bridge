@@ -54,3 +54,4 @@ flowchart LR
 | [Architecture](docs/architecture.md) | Components, data flow, config model, deployment modes |
 | [Security](docs/security.md) | Threat model, crypto details, secret handling |
 | [Deployment (HA Add-on)](docs/deployment-ha-addon.md) | Step-by-step add-on install and configure |
+| [Device: GIEX Water Timer](docs/device-giex-water-timer.md) | Field findings for the GX-03WF: TLS-PSK on port 8883, hairpin-NAT gotcha |

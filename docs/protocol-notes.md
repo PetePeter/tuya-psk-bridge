@@ -122,9 +122,24 @@ mappings:
       closed: "OFF"
 ```
 
+## Endpoint Ports
+
+Not every Tuya device uses the same cloud port, and the port implies nothing about the
+handshake — both observed ports negotiate TLS-PSK.
+
+| Port | Seen on | Notes |
+|---|---|---|
+| 8886 | Wi-Fi door sensors | The originally supported endpoint. |
+| 8883 | GIEX GX-03WF water timer | Same PSK crypto; offers `0x00ae`, which this bridge already implements. See [GIEX device notes](./device-giex-water-timer.md). |
+
+Devices do **not** fall back between ports. Blocking one endpoint makes the device go
+silent rather than try another, so a device can only be captured on the port it already
+uses.
+
 ## References
 
 - [Architecture overview](./architecture.md) - Component diagram and data flow.
+- [GIEX water timer notes](./device-giex-water-timer.md) - Port 8883 findings and the hairpin-NAT requirement.
 - [Security model](./security.md) - Threat model and secret handling.
 - [OpenWrt redirect guide](./router-openwrt-glinet.md) - Router configuration for traffic redirection.
 - Lab findings are recorded in `docs/security.md` under the PSK analysis section.
