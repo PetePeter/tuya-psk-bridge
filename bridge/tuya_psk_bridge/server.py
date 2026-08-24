@@ -27,6 +27,7 @@ import struct
 import threading
 from typing import Any, Callable
 
+from .commands import command_topic, encode_command
 from .models import BridgeConfig, DecodedEvent, DeviceConfig
 from .psk_frontend import derive_psk
 
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 # Callback signature: (device_id: str, event: DecodedEvent) -> None
 EventCallback = Callable[[str, DecodedEvent], None]
+
+# Derivation signature: (identity: bytes, hint: bytes) -> psk bytes
+PskDeriver = Callable[[bytes, bytes], bytes]
 
 # ---------------------------------------------------------------------------
 # sslpsk import — graceful degradation
@@ -181,6 +185,31 @@ def _parse_mqtt_publish(data: bytes) -> tuple[str | None, bytes | None]:
         return None, None
 
 
+def _encode_remaining_length(length: int) -> bytes:
+    """Encode an MQTT variable-length remaining-length field."""
+    encoded = bytearray()
+    while True:
+        byte = length % 128
+        length //= 128
+        if length:
+            byte |= 0x80
+        encoded.append(byte)
+        if not length:
+            return bytes(encoded)
+
+
+def _build_mqtt_publish(topic: str, payload: bytes) -> bytes:
+    """Frame a QoS 0 PUBLISH packet.
+
+    QoS 0 carries no packet identifier, which keeps the device from expecting
+    a PUBACK the bridge would then have to track.
+    """
+    topic_bytes = topic.encode("utf-8")
+    variable_header = struct.pack("!H", len(topic_bytes)) + topic_bytes
+    body = variable_header + payload
+    return bytes([_MQTT_PUBLISH]) + _encode_remaining_length(len(body)) + body
+
+
 def _extract_device_id_from_topic(topic: str) -> str | None:
     """Extract the device ID from a Tuya outgoing topic.
 
@@ -259,10 +288,16 @@ class PskMqttServer:
         server.stop()
 
     Args:
-        config: Bridge configuration (listen_host, mqtt_psk_port, devices).
+        config: Bridge configuration (listen_host, devices).
         psk_hint: The PSK hint bytes to present during the TLS-PSK handshake.
         event_callback: Called with ``(device_id: str, event: DecodedEvent)``
             whenever a decoded publish is received from a device.
+        port: The TCP port to bind. Defaults to ``config.mqtt_psk_port``; the
+            runtime passes each of ``config.listen_ports`` in turn.
+        psk_deriver: How to turn a TLS-PSK identity into the pre-shared key.
+            Defaults to the derivation proven against the door sensors. The
+            runtime overrides it only on non-primary ports, so a lab variant
+            can never reach a listener that already works.
     """
 
     def __init__(
@@ -270,10 +305,12 @@ class PskMqttServer:
         config: BridgeConfig,
         psk_hint: bytes,
         event_callback: EventCallback,
+        port: int | None = None,
+        psk_deriver: PskDeriver = derive_psk,
     ) -> None:
-        _has_sslpsk()
-
         self._config = config
+        self._port = port if port is not None else config.mqtt_psk_port
+        self._psk_deriver = psk_deriver
         self._hint = psk_hint
         self._event_callback = event_callback
         self._sessions: list[_DeviceSession] = []
@@ -289,6 +326,11 @@ class PskMqttServer:
 
     # -- public API ----------------------------------------------------------
 
+    @property
+    def port(self) -> int:
+        """The TCP port this server binds."""
+        return self._port
+
     def start(self) -> None:
         """Bind, listen, and spawn the select-loop thread.
 
@@ -301,14 +343,26 @@ class PskMqttServer:
                 logger.warning("PskMqttServer already running")
                 return
 
+            if not _HAS_SSLPSK:
+                # Binding and the select loop work without it; the handshake
+                # does not. Say so now rather than at the first connection.
+                logger.error(
+                    "sslpsk is not installed — port %d will accept TCP connections "
+                    "but every TLS-PSK handshake will fail. Install it with: "
+                    "pip install sslpsk",
+                    self._port,
+                )
+
             self._server_sock = self._bind()
             self._running = True
-            self._thread = threading.Thread(target=self._select_loop, daemon=True, name="psk-server")
+            self._thread = threading.Thread(
+                target=self._select_loop, daemon=True, name=f"psk-server-{self._port}"
+            )
             self._thread.start()
             logger.info(
                 "PskMqttServer listening on %s:%d",
                 self._config.listen_host,
-                self._config.mqtt_psk_port,
+                self._port,
             )
 
     def stop(self) -> None:
@@ -337,6 +391,53 @@ class PskMqttServer:
         """Whether the server select loop is active."""
         return self._running
 
+    def send_command(self, device_id: str, dps: dict[str, Any]) -> bool:
+        """Publish a DPS command to a connected device.
+
+        The device must currently hold a session with this server — Tuya
+        devices only listen on the connection they opened.
+
+        Args:
+            device_id: Target device.
+            dps: DPS id to value, e.g. ``{"1": True}``.
+
+        Returns:
+            True when the command was written to the socket, False when the
+            device is unknown, not connected, or the write failed.
+        """
+        device = self._device_map.get(device_id)
+        if device is None:
+            logger.warning("Cannot send command: no config for device_id=%s", device_id)
+            return False
+
+        session = self._find_session_by_device(device_id)
+        if session is None:
+            logger.warning(
+                "Cannot send command to %s: device is not connected to port %d",
+                device_id,
+                self._port,
+            )
+            return False
+
+        packet = _build_mqtt_publish(
+            command_topic(device_id),
+            encode_command(device_id, dps, device.local_key),
+        )
+        try:
+            session.sock.sendall(packet)
+        except OSError as exc:
+            logger.warning("Failed to send command to %s: %s", device_id, exc)
+            return False
+
+        logger.info("Sent command to %s: %s", device_id, dps)
+        return True
+
+    def _find_session_by_device(self, device_id: str) -> _DeviceSession | None:
+        for session in self._sessions:
+            if session.device_id == device_id:
+                return session
+        return None
+
     # -- internals -----------------------------------------------------------
 
     def _bind(self) -> socket.socket:
@@ -344,11 +445,11 @@ class PskMqttServer:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            sock.bind((self._config.listen_host, self._config.mqtt_psk_port))
+            sock.bind((self._config.listen_host, self._port))
         except OSError as exc:
             sock.close()
             raise OSError(
-                f"Cannot bind to {self._config.listen_host}:{self._config.mqtt_psk_port}: "
+                f"Cannot bind to {self._config.listen_host}:{self._port}: "
                 f"{exc}. Check that the port is free and the host address is correct "
                 f"(for Docker/host networking, use 0.0.0.0 not 127.0.0.1)."
             ) from exc
@@ -358,12 +459,13 @@ class PskMqttServer:
 
     def _wrap_psk(self, client_sock: socket.socket) -> ssl.SSLSocket:
         """Perform the TLS-PSK handshake on an accepted TCP connection."""
+        _has_sslpsk()
         return sslpsk.wrap_socket(  # type: ignore[attr-defined]
             client_sock,
             server_side=True,
             ssl_version=ssl.PROTOCOL_TLSv1_2,
             ciphers="PSK-AES128-CBC-SHA256",
-            psk=lambda identity: derive_psk(identity, self._hint),
+            psk=lambda identity: self._psk_deriver(identity, self._hint),
             hint=self._hint,
         )
 

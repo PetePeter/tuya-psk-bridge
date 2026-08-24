@@ -1,5 +1,5 @@
 name: Tuya PSK Bridge
-version: "0.1.6"
+version: "0.2.2"
 slug: tuya_psk_bridge
 description: >-
   Local bridge that accepts Tuya/Smart Life TLS-PSK device traffic and exposes
@@ -13,25 +13,37 @@ boot: auto
 startup: services
 ports:
   8886/tcp: 8886
+  18883/tcp: 18883
+
 ports_description:
-  8886/tcp: Tuya TLS-PSK listener
+  8886/tcp: Tuya TLS-PSK listener (door sensors)
+  18883/tcp: >-
+    Tuya TLS-PSK listener for devices whose cloud endpoint is 8883. The host
+    port is 18883 because core-mosquitto already owns 8883 for MQTTS; the
+    router DNAT rewrites the destination port, which devices do not check.
 options:
   listen_host: "0.0.0.0"
   mqtt_psk_port: 8886
+  mqtt_psk_ports:
+    - 8886
   ha_mqtt_host: "core-mosquitto"
   ha_mqtt_port: 1883
   ha_mqtt_username: ""
   ha_mqtt_password: ""
   log_level: "INFO"
+  psk_variant: ""
   devices: []
 schema:
   listen_host: str
   mqtt_psk_port: port
+  mqtt_psk_ports:
+    - port
   ha_mqtt_host: str
   ha_mqtt_port: port
   ha_mqtt_username: str?
   ha_mqtt_password: password?
   log_level: list(INFO|DEBUG|WARNING|ERROR)
+  psk_variant: str?
   devices:
     - device_id: str
       local_key: password

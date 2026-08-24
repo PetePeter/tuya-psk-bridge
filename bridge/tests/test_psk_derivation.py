@@ -241,3 +241,38 @@ class TestDerivePskAlgorithm:
 
         actual_psk = derive_psk(identity, hint)
         assert actual_psk == expected_psk
+
+
+class TestIdentitySchemeDiagnostics:
+    """An unsupported identity scheme must say so, not fail opaquely.
+
+    The GIEX water timer presents a version byte of 0x03 without the scheme-1
+    prefix. Without this warning the only symptom is OpenSSL's "record layer
+    failure", which says nothing about why.
+    """
+
+    _DOOR = bytes.fromhex(
+        "0142416f68626d6436614739314946523183ee605d32bf4bb9"
+        "7ae85484d13c9c435f5e0d5a331c261a416fb413cd25057718"
+    )
+    _GIEX = bytes.fromhex(
+        "03514d18c063bd8a22e8fde0faede3209c7bc350dd6af304"
+        "3ba2819d801530a08baa7e05e37646cd4de8d73fb6576be5ea"
+    )
+
+    def test_known_scheme_identity_derives_without_complaint(self, caplog):
+        from tuya_psk_bridge.psk_frontend import DEFAULT_HINT, derive_psk
+
+        with caplog.at_level("ERROR"):
+            psk = derive_psk(self._DOOR, DEFAULT_HINT)
+
+        assert len(psk) == 32
+        assert caplog.records == []
+
+    def test_unknown_scheme_identity_is_reported(self, caplog):
+        from tuya_psk_bridge.psk_frontend import DEFAULT_HINT, derive_psk
+
+        with caplog.at_level("ERROR"):
+            derive_psk(self._GIEX, DEFAULT_HINT)
+
+        assert any("0x03" in record.getMessage() for record in caplog.records)

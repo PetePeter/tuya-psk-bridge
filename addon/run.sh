@@ -58,11 +58,16 @@ fi
 # Extract scalar options (jq returns empty string for missing keys)
 LISTEN_HOST=$(jq -r '.listen_host // "0.0.0.0"' "${OPTIONS_PATH}")
 MQTT_PSK_PORT=$(jq -r '.mqtt_psk_port // 8886' "${OPTIONS_PATH}")
+# Extra TLS-PSK endpoints. Tuya devices never fall back between ports, so each
+# device family must be met on the port it already uses.
+MQTT_PSK_PORTS=$(jq -r '(.mqtt_psk_ports // []) | join(", ")' "${OPTIONS_PATH}")
 HA_MQTT_HOST=$(jq -r '.ha_mqtt_host // "core-mosquitto"' "${OPTIONS_PATH}")
 HA_MQTT_PORT=$(jq -r '.ha_mqtt_port // 1883' "${OPTIONS_PATH}")
 HA_MQTT_USERNAME=$(jq -r '.ha_mqtt_username // ""' "${OPTIONS_PATH}")
 HA_MQTT_PASSWORD=$(jq -r '.ha_mqtt_password // ""' "${OPTIONS_PATH}")
 LOG_LEVEL=$(jq -r '.log_level // "INFO"' "${OPTIONS_PATH}")
+# Lab-only PSK derivation for the non-primary ports. Empty means the proven one.
+PSK_VARIANT=$(jq -r '.psk_variant // ""' "${OPTIONS_PATH}")
 
 log_info "Add-on options loaded from ${OPTIONS_PATH}"
 
@@ -81,6 +86,10 @@ ha_mqtt_host: "${HA_MQTT_HOST}"
 ha_mqtt_port: ${HA_MQTT_PORT}
 EOF
 
+if [[ -n "${MQTT_PSK_PORTS}" ]]; then
+    echo "mqtt_psk_ports: [${MQTT_PSK_PORTS}]" >> "${CONFIG_PATH}"
+fi
+
 # Optional HA MQTT credentials
 if [[ -n "${HA_MQTT_USERNAME}" ]]; then
     echo "ha_mqtt_username: \"${HA_MQTT_USERNAME}\"" >> "${CONFIG_PATH}"
@@ -91,6 +100,11 @@ fi
 
 # Log level
 echo "log_level: \"${LOG_LEVEL}\"" >> "${CONFIG_PATH}"
+
+if [[ -n "${PSK_VARIANT}" ]]; then
+    log_warn "Using experimental PSK variant '${PSK_VARIANT}' on non-primary ports"
+    echo "psk_variant: \"${PSK_VARIANT}\"" >> "${CONFIG_PATH}"
+fi
 
 # ---------------------------------------------------------------------------
 # Write device entries
@@ -174,7 +188,8 @@ log_info "Validating generated configuration..."
 if python -c "
 from tuya_psk_bridge.config import load_config
 cfg = load_config('${CONFIG_PATH}')
-print(f'Config OK: {len(cfg.devices)} device(s), listen on {cfg.listen_host}:{cfg.mqtt_psk_port}')
+ports = ', '.join(str(p) for p in cfg.listen_ports)
+print(f'Config OK: {len(cfg.devices)} device(s), listen on {cfg.listen_host} ports {ports}')
 " 2>&1; then
     log_info "Configuration validated successfully."
 else
@@ -187,7 +202,7 @@ fi
 # ---------------------------------------------------------------------------
 
 log_info "Starting Tuya PSK Bridge (log level: ${LOG_LEVEL})..."
-log_info "Listening on ${LISTEN_HOST}:${MQTT_PSK_PORT}"
+log_info "Listening on ${LISTEN_HOST} ports ${MQTT_PSK_PORTS:-${MQTT_PSK_PORT}}"
 log_info "Forwarding to HA MQTT at ${HA_MQTT_HOST}:${HA_MQTT_PORT}"
 
 python -m tuya_psk_bridge.main --config "${CONFIG_PATH}" &

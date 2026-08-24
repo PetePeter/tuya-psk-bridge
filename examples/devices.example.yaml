@@ -1,12 +1,26 @@
-listen:
-  host: 0.0.0.0
-  mqtt_psk_port: 8886
-ha_mqtt:
-  host: core-mosquitto
-  port: 1883
-  username: "!secret mqtt_user"
-  password: "!secret mqtt_password"
+# Example bridge configuration.
+#
+# Keys are flat at the top level — this is what tuya_psk_bridge.config.load_config
+# expects, and what the add-on's run.sh generates from /data/options.json.
+
+listen_host: 0.0.0.0
+
+# Every TLS-PSK endpoint to bind. Tuya devices never fall back between ports, so
+# each device family must be met on the port it already dials. The listener port
+# need not equal the port the device dials — DNAT rewrites it.
+mqtt_psk_ports:
+  - 8886   # Wi-Fi door sensors
+  - 18883  # devices whose cloud endpoint is 8883 (core-mosquitto owns 8883)
+
+# Single-port deployments may still use this instead; both keys may be combined.
+mqtt_psk_port: 8886
+
+ha_mqtt_host: core-mosquitto
+ha_mqtt_port: 1883
+ha_mqtt_username: "!secret mqtt_user"
+ha_mqtt_password: "!secret mqtt_password"
 log_level: INFO
+
 devices:
   - device_id: "0123456789abcdefabcd"
     local_key: "!secret tuya_door_1_local_key"
@@ -19,14 +33,25 @@ devices:
         values:
           open: "ON"
           closed: "OFF"
+
+  # A controllable device. DPS ids are per-product — read them from the Tuya
+  # IoT Platform thing model rather than copying a similar device, which is how
+  # the GIEX timer's battery turned out to be 59 and not 47.
+  #
+  # platform "switch" makes the bridge advertise a
+  # command_topic and subscribe to it, so Home Assistant can turn the valve on
+  # and off. Values map raw device values to the HA states ON and OFF, and the
+  # command path walks the same mapping backwards.
   - device_id: "abcdef0123456789abcd"
-    local_key: "!secret tuya_door_2_local_key"
-    name: "Back Door"
-    profile: door_sensor
+    local_key: "!secret tuya_water_timer_local_key"
+    name: "Water Timer"
+    profile: water_timer
     mappings:
       - dps: "1"
-        platform: binary_sensor
-        device_class: door
+        platform: switch
         values:
-          open: "ON"
-          closed: "OFF"
+          "True": "ON"
+          "False": "OFF"
+      - dps: "59"
+        platform: sensor
+        device_class: battery

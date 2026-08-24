@@ -42,6 +42,13 @@ _AES_INPUT_LEN = 32
 # captured firmware. Configurable in a future version if needed.
 DEFAULT_HINT = b"1dHRsc2NjbHltbGx3eWh50000000000000000"
 
+# Fixed prefix carried by scheme-1 identities, immediately after the version
+# byte. Upstream tuya-convert validates this exact string before deriving, and
+# this derivation is only proven for identities that carry it. Devices using a
+# later scheme (version byte 0x03 has been observed) have a different identity
+# layout and a PSK this function cannot produce.
+_SCHEME_1_PREFIX = b"BAohbmd6aG91IFR1"
+
 
 def derive_psk(identity: bytes, hint: bytes) -> bytes:
     """Derive the 32-byte TLS-PSK from the Tuya identity and hint.
@@ -73,6 +80,18 @@ def derive_psk(identity: bytes, hint: bytes) -> bytes:
 
     stripped = identity[_IDENTITY_LENGTH_PREFIX_LEN:]
 
+    if not stripped.startswith(_SCHEME_1_PREFIX):
+        # Upstream tuya-convert rejects the identity outright here. We continue
+        # so the handshake failure stays in one place, but say plainly what is
+        # wrong: without this the only symptom is an opaque "record layer
+        # failure" from OpenSSL, which cost a full evening to attribute.
+        logger.error(
+            "PSK identity version byte 0x%02x does not carry the known scheme-1 "
+            "prefix; this derivation is only proven for scheme 1 and the "
+            "handshake is expected to fail. See docs/device-giex-water-timer.md",
+            identity[0] if identity else 0,
+        )
+
     if len(stripped) < _BLOCK_SIZE:
         raise ValueError(
             f"Identity too short after prefix removal: "
@@ -91,3 +110,84 @@ def derive_psk(identity: bytes, hint: bytes) -> bytes:
 
     logger.debug("Derived PSK (%d bytes) for identity (stripped len=%d)", len(psk), len(stripped))
     return psk
+
+
+# ---------------------------------------------------------------------------
+# Lab variants
+# ---------------------------------------------------------------------------
+#
+# :func:`derive_psk` is the derivation proven against the door sensors on 8886
+# and must not be changed speculatively. The GIEX water timer on 8883 presents a
+# 49-byte identity shaped as ``0x03`` + 16 per-boot bytes + 32 bytes that are
+# constant across boots, and rejects the PSK :func:`derive_psk` produces.
+#
+# These variants slice that identity differently so a candidate can be tried on
+# one listener without touching the port the door sensors use. They are lab
+# tools: when one is confirmed it should replace this table with a documented
+# derivation, not linger as a switch.
+
+
+def _variant_tail32(identity: bytes, hint: bytes) -> bytes:
+    """Encrypt the trailing 32 bytes — the part constant across boots."""
+    stripped = identity[_IDENTITY_LENGTH_PREFIX_LEN:]
+    key = md5(hint[-16:]).digest()
+    iv = md5(stripped).digest()
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(stripped[-_AES_INPUT_LEN:])
+
+
+def _variant_head16_iv(identity: bytes, hint: bytes) -> bytes:
+    """Same input as the default, but the IV covers only the per-boot bytes."""
+    stripped = identity[_IDENTITY_LENGTH_PREFIX_LEN:]
+    key = md5(hint[-16:]).digest()
+    iv = md5(stripped[:_BLOCK_SIZE]).digest()
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(stripped[:_AES_INPUT_LEN])
+
+
+def _variant_full(identity: bytes, hint: bytes) -> bytes:
+    """Encrypt the whole stripped identity rather than a fixed 32 bytes."""
+    stripped = identity[_IDENTITY_LENGTH_PREFIX_LEN:]
+    usable = len(stripped) - (len(stripped) % _BLOCK_SIZE)
+    key = md5(hint[-16:]).digest()
+    iv = md5(stripped).digest()
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(stripped[:usable])
+
+
+def _variant_full_hint_key(identity: bytes, hint: bytes) -> bytes:
+    """Key from the whole hint instead of its last 16 bytes."""
+    stripped = identity[_IDENTITY_LENGTH_PREFIX_LEN:]
+    key = md5(hint).digest()
+    iv = md5(stripped).digest()
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(stripped[:_AES_INPUT_LEN])
+
+
+def _variant_no_prefix_strip(identity: bytes, hint: bytes) -> bytes:
+    """Treat the leading byte as identity data rather than a length prefix."""
+    key = md5(hint[-16:]).digest()
+    iv = md5(identity).digest()
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(identity[:_AES_INPUT_LEN])
+
+
+PSK_VARIANTS = {
+    "default": derive_psk,
+    "tail32": _variant_tail32,
+    "head16_iv": _variant_head16_iv,
+    "full": _variant_full,
+    "full_hint_key": _variant_full_hint_key,
+    "no_prefix_strip": _variant_no_prefix_strip,
+}
+
+
+def get_psk_deriver(variant: str | None):
+    """Look up a derivation by name; ``None`` or ``"default"`` is the proven one.
+
+    Raises:
+        ValueError: If the name is not a known variant.
+    """
+    if not variant:
+        return derive_psk
+    try:
+        return PSK_VARIANTS[variant]
+    except KeyError:
+        raise ValueError(
+            f"Unknown PSK variant '{variant}'; known: {sorted(PSK_VARIANTS)}"
+        ) from None

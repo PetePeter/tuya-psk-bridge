@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -38,6 +38,7 @@ class DiscoveryPayload:
     payload_on: str | None = None
     payload_off: str | None = None
     device_class: str | None = None
+    command_topic: str | None = None
 
     def to_json(self) -> str:
         """Serialize to JSON, omitting None fields so HA uses defaults."""
@@ -58,6 +59,8 @@ class DiscoveryPayload:
             data["payload_on"] = self.payload_on
         if self.payload_off is not None:
             data["payload_off"] = self.payload_off
+        if self.command_topic is not None:
+            data["command_topic"] = self.command_topic
         return json.dumps(data)
 
 
@@ -69,6 +72,11 @@ def _discovery_topic(device_config: DeviceConfig, mapping: DeviceMapping) -> str
 def _state_topic(device_config: DeviceConfig, mapping: DeviceMapping) -> str:
     """Build the HA MQTT state topic for a mapping."""
     return f"homeassistant/{mapping.platform}/tuya_psk_{device_config.device_id}_{mapping.dps}/state"
+
+
+def ha_command_topic(device_config: DeviceConfig, mapping: DeviceMapping) -> str:
+    """Build the HA MQTT command topic HA publishes to for a controllable entity."""
+    return f"homeassistant/{mapping.platform}/tuya_psk_{device_config.device_id}_{mapping.dps}/set"
 
 
 def _availability_topic(device_config: DeviceConfig) -> str:
@@ -91,6 +99,29 @@ def _device_info(device_config: DeviceConfig) -> dict[str, Any]:
     }
 
 
+# Platforms Home Assistant can send commands to. Everything else is reported
+# state only, and must not advertise a command topic it cannot honour.
+_CONTROLLABLE_PLATFORMS = frozenset({"switch"})
+
+# The HA-facing on/off strings. Mappings normalize raw device values to these.
+_STATE_ON = "ON"
+_STATE_OFF = "OFF"
+
+
+def _on_off_payloads(mapping: DeviceMapping) -> tuple[str | None, str | None]:
+    """Pick the on/off state strings a mapping can actually produce.
+
+    Derived from the mapping's normalized values rather than from door-sensor
+    key names, so switches (``True``/``False``) work the same as contacts
+    (``open``/``closed``).
+    """
+    normalized = set(mapping.values.values())
+    return (
+        _STATE_ON if _STATE_ON in normalized else None,
+        _STATE_OFF if _STATE_OFF in normalized else None,
+    )
+
+
 def build_discovery_payload(
     device_config: DeviceConfig,
     mapping: DeviceMapping,
@@ -100,6 +131,9 @@ def build_discovery_payload(
     The resulting payload conforms to the HA MQTT discovery spec so the
     entity auto-appears in Home Assistant when the config is published.
     """
+    payload_on, payload_off = _on_off_payloads(mapping)
+    controllable = mapping.platform in _CONTROLLABLE_PLATFORMS
+
     return DiscoveryPayload(
         name=device_config.name,
         unique_id=_unique_id(device_config, mapping),
@@ -109,9 +143,10 @@ def build_discovery_payload(
         availability_topic=_availability_topic(device_config),
         payload_available="online",
         payload_not_available="offline",
-        payload_on=mapping.values.get("open"),
-        payload_off=mapping.values.get("closed"),
+        payload_on=payload_on,
+        payload_off=payload_off,
         device_class=mapping.device_class,
+        command_topic=ha_command_topic(device_config, mapping) if controllable else None,
     )
 
 
@@ -218,6 +253,31 @@ class HaMqttPublisher:
         topic = _availability_topic(device_config)
         payload = "online" if available else "offline"
         self._client.publish(topic, payload, qos=1, retain=True)
+
+    def subscribe_commands(
+        self,
+        config: BridgeConfig,
+        callback: Callable[[str, str], None],
+    ) -> None:
+        """Subscribe to the command topic of every controllable mapping.
+
+        Args:
+            config: Bridge configuration to walk for controllable mappings.
+            callback: Called with ``(topic, payload)`` for each HA command.
+        """
+        def _on_message(_client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+            callback(message.topic, message.payload.decode("utf-8", errors="replace"))
+
+        count = 0
+        for device_config in config.devices:
+            for mapping in device_config.mappings:
+                if mapping.platform not in _CONTROLLABLE_PLATFORMS:
+                    continue
+                topic = ha_command_topic(device_config, mapping)
+                self._client.subscribe(topic, qos=1)
+                self._client.message_callback_add(topic, _on_message)
+                count += 1
+        logger.info("Subscribed to %d HA command topic(s)", count)
 
     def publish_all_discovery(self, config: BridgeConfig) -> None:
         """Publish discovery configs for every configured device."""

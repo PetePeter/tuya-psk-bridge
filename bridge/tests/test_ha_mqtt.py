@@ -392,6 +392,8 @@ class _MockMqttClient:
     def __init__(self) -> None:
         self.published: list[tuple[str, str, int, bool]] = []
         self.connected: bool = False
+        self.subscribed: list[tuple[str, int]] = []
+        self.callbacks: list[tuple[str, object]] = []
 
     def connect(self, host: str, port: int) -> None:
         self.connected = True
@@ -410,3 +412,93 @@ class _MockMqttClient:
 
     def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False) -> None:
         self.published.append((topic, payload, qos, retain))
+
+    def subscribe(self, topic: str, qos: int = 0) -> None:
+        self.subscribed.append((topic, qos))
+
+    def message_callback_add(self, sub: str, callback) -> None:
+        self.callbacks.append((sub, callback))
+
+
+# ---------------------------------------------------------------------------
+# Switch entities and the door-sensor regression guard
+# ---------------------------------------------------------------------------
+
+def _switch_device() -> DeviceConfig:
+    """The GIEX water timer: a controllable switch, not a door contact."""
+    return DeviceConfig(
+        device_id="bfa1de1cfc890dea68i4qh",
+        local_key="placeholder_key",
+        name="GIEX Water Timer",
+        profile="water_timer",
+        mappings=[
+            DeviceMapping(
+                dps="1",
+                platform="switch",
+                values={"True": "ON", "False": "OFF"},
+            ),
+        ],
+    )
+
+
+class TestSwitchDiscovery:
+    def test_switch_gets_a_command_topic(self):
+        """Without command_topic HA renders a read-only switch that does nothing."""
+        device = _switch_device()
+        payload = build_discovery_payload(device, device.mappings[0])
+
+        assert payload.command_topic == (
+            "homeassistant/switch/tuya_psk_bfa1de1cfc890dea68i4qh_1/set"
+        )
+
+    def test_switch_payload_on_off_come_from_the_mapping(self):
+        """Values are True/False here, not open/closed — the old code returned None."""
+        device = _switch_device()
+        payload = build_discovery_payload(device, device.mappings[0])
+
+        assert payload.payload_on == "ON"
+        assert payload.payload_off == "OFF"
+
+    def test_binary_sensor_has_no_command_topic(self):
+        """Door sensors are read-only; a command topic would be a lie."""
+        device = _door_device()
+        payload = build_discovery_payload(device, device.mappings[0])
+
+        assert payload.command_topic is None
+        assert "command_topic" not in json.loads(payload.to_json())
+
+
+class TestDoorSensorDiscoveryUnchanged:
+    """Byte-for-byte guard on the four door sensors that are live on 8886.
+
+    Captured from the running broker on 2026-08-24 before the multi-port work.
+    """
+
+    _LIVE_DOOR_ABUELO = {
+        "name": "Door Abuelo",
+        "unique_id": "tuya_psk_6108211684f3ebce7479_1",
+        "state_topic": "homeassistant/binary_sensor/tuya_psk_6108211684f3ebce7479_1/state",
+        "platform": "binary_sensor",
+        "device": {
+            "identifiers": ["6108211684f3ebce7479"],
+            "manufacturer": "Tuya",
+            "model": "door_sensor",
+            "name": "Door Abuelo",
+        },
+        "availability_topic": "homeassistant/status/tuya_psk_6108211684f3ebce7479/availability",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "device_class": "door",
+        "payload_on": "ON",
+        "payload_off": "OFF",
+    }
+
+    def test_live_door_sensor_discovery_json_is_reproduced_exactly(self):
+        device = _door_device(
+            device_id="6108211684f3ebce7479",
+            name="Door Abuelo",
+            profile="door_sensor",
+        )
+        payload = build_discovery_payload(device, device.mappings[0])
+
+        assert json.loads(payload.to_json()) == self._LIVE_DOOR_ABUELO

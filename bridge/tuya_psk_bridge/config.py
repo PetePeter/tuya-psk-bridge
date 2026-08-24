@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from .models import BridgeConfig, DeviceConfig, DeviceMapping
+from .psk_frontend import get_psk_deriver
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,52 @@ def _parse_devices(raw_devices: list[dict[str, Any]] | None) -> list[DeviceConfi
     return devices
 
 
+def _parse_listen_ports(data: dict[str, Any]) -> list[int]:
+    """Resolve the TLS-PSK listener ports from the two accepted keys.
+
+    ``mqtt_psk_port`` is the original single-port key and stays valid — it is
+    what deployed add-on options already write. ``mqtt_psk_ports`` adds further
+    endpoints. When both appear the single port leads, then the list, with
+    duplicates removed.
+
+    Raises:
+        ConfigError: If neither key is present, or a value is not an integer.
+    """
+    raw_ports: list[Any] = []
+    if "mqtt_psk_port" in data:
+        raw_ports.append(data["mqtt_psk_port"])
+    if "mqtt_psk_ports" in data:
+        listed = data["mqtt_psk_ports"]
+        if not isinstance(listed, list):
+            raise ConfigError(f"'mqtt_psk_ports' must be a list, got {type(listed).__name__}")
+        raw_ports.extend(listed)
+
+    if not raw_ports:
+        raise ConfigError("Config must set 'mqtt_psk_port' or 'mqtt_psk_ports'")
+
+    try:
+        ports = [int(port) for port in raw_ports]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Listener ports must be integers: {exc}") from exc
+
+    return list(dict.fromkeys(ports))
+
+
+def _parse_psk_variant(raw: Any) -> str | None:
+    """Validate the lab PSK variant name, if one is set.
+
+    Raises:
+        ConfigError: If the name is not a known variant.
+    """
+    if raw in (None, "", "default"):
+        return None
+    try:
+        get_psk_deriver(str(raw))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from None
+    return str(raw)
+
+
 def load_config(path: str | Path) -> BridgeConfig:
     """Load and validate a YAML bridge configuration file.
 
@@ -163,18 +210,22 @@ def load_config(path: str | Path) -> BridgeConfig:
     data = _deep_resolve_secrets(raw)
 
     # Validate required top-level fields
-    required_top = ("listen_host", "mqtt_psk_port", "ha_mqtt_host", "ha_mqtt_port", "log_level")
+    required_top = ("listen_host", "ha_mqtt_host", "ha_mqtt_port", "log_level")
     missing_top = [f for f in required_top if f not in data]
     if missing_top:
         raise ConfigError(f"Config missing required fields: {missing_top}")
 
+    ports = _parse_listen_ports(data)
+
     return BridgeConfig(
         listen_host=str(data["listen_host"]),
-        mqtt_psk_port=int(data["mqtt_psk_port"]),
+        mqtt_psk_port=ports[0],
+        additional_psk_ports=ports[1:],
         ha_mqtt_host=str(data["ha_mqtt_host"]),
         ha_mqtt_port=int(data["ha_mqtt_port"]),
         ha_mqtt_username=data.get("ha_mqtt_username"),
         ha_mqtt_password=data.get("ha_mqtt_password"),
         log_level=str(data["log_level"]),
         devices=_parse_devices(data.get("devices")),
+        psk_variant=_parse_psk_variant(data.get("psk_variant")),
     )

@@ -81,7 +81,13 @@ class BridgeConfig:
 
     Attributes:
         listen_host: Host address for the Tuya PSK listener.
-        mqtt_psk_port: Port for the Tuya PSK MQTT broker.
+        mqtt_psk_port: Primary port for the Tuya PSK MQTT broker.
+        additional_psk_ports: Further ports to listen on. Devices do not fall
+            back between endpoints, so each device family must be met on the
+            port it already uses (door sensors 8886, GIEX water timer 8883).
+        psk_variant: Lab-only PSK derivation applied to the additional ports.
+            The primary port always uses the proven derivation, so experiments
+            cannot affect devices that already work.
         ha_mqtt_host: Home Assistant MQTT broker host.
         ha_mqtt_port: Home Assistant MQTT broker port.
         ha_mqtt_username: Optional HA MQTT username.
@@ -98,3 +104,10 @@ class BridgeConfig:
     ha_mqtt_password: str | None
     log_level: str
     devices: list[DeviceConfig] = field(default_factory=list)
+    additional_psk_ports: list[int] = field(default_factory=list)
+    psk_variant: str | None = None
+
+    @property
+    def listen_ports(self) -> list[int]:
+        """Every port to bind, primary first, deduplicated in order."""
+        return list(dict.fromkeys([self.mqtt_psk_port, *self.additional_psk_ports]))

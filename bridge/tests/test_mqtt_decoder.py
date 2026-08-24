@@ -260,3 +260,48 @@ class TestDecodeMqttPayload:
         raw = _build_raw_payload({"dps": {"1": "open"}})
         with pytest.raises(ValueError, match="AES decryption failed"):
             decode_mqtt_payload(raw, _WRONG_KEY)
+
+
+# ---------------------------------------------------------------------------
+# GIEX water timer (GX-03WF)
+# ---------------------------------------------------------------------------
+
+class TestGiexWaterTimerPayload:
+    """The water timer reports booleans and a battery integer in one message.
+
+    Door sensors only ever send a single string DPS, so this covers value
+    types the decoder had not seen before.
+    """
+
+    _LOCAL_KEY = "TESTKEY012345678"  # any 16 chars; not a real device key
+
+    def _payload(self) -> bytes:
+        from tuya_psk_bridge.commands import encode_command
+
+        return encode_command(
+            "bfa1de1cfc890dea68i4qh",
+            {"1": True, "2": False, "11": 100},
+            self._LOCAL_KEY,
+        )
+
+    def test_booleans_and_battery_decode_together(self):
+        event = decode_mqtt_payload(self._payload(), self._LOCAL_KEY)
+
+        assert {d.dps_id: d.raw_value for d in event.dps_list} == {
+            "1": "True",
+            "2": "False",
+            "11": "100",
+        }
+
+    def test_switch_values_are_normalized_for_home_assistant(self):
+        mappings = {
+            "1": DeviceMapping(dps="1", platform="switch", values={"True": "ON", "False": "OFF"}),
+            "11": DeviceMapping(dps="11", platform="sensor", device_class="battery"),
+        }
+
+        event = decode_mqtt_payload(self._payload(), self._LOCAL_KEY, mappings)
+        decoded = {d.dps_id: d for d in event.dps_list}
+
+        assert decoded["1"].normalized_value == "ON"
+        assert decoded["11"].normalized_value is None
+        assert decoded["11"].raw_value == "100"

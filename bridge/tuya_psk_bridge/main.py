@@ -76,8 +76,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         runtime.start()
-        # Block until the server thread exits (stopped by signal or runtime.stop()).
-        runtime._server._thread.join() if runtime._server and runtime._server._thread else None
+        # Block until the listener threads exit (stopped by signal or runtime.stop()).
+        for server in runtime.servers:
+            if server._thread is not None:
+                server._thread.join()
     except KeyboardInterrupt:
         runtime.stop()
     except Exception as exc:

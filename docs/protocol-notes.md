@@ -87,6 +87,38 @@ smart/device/out/<device_id>
 
 The bridge subscribes to this topic pattern to intercept device reports.
 
+### Device Command Topic
+
+Devices listen for commands on the mirror of their reporting topic:
+
+```
+smart/device/in/<device_id>
+```
+
+The bridge publishes here (QoS 0, no packet identifier) over the same TLS-PSK
+session the device opened — a device only accepts commands on the connection it
+established, so the bridge can only control a device that is currently connected.
+
+The payload is built the same way a report is read, in reverse: JSON, AES-128-ECB
+encrypted with the `local_key`, wrapped in the 15-byte `2.2` envelope. Control
+messages carry `"protocol": 5`.
+
+```mermaid
+sequenceDiagram
+    participant HA as Home Assistant
+    participant BR as Bridge
+    participant DEV as Tuya device
+
+    Note over HA,DEV: Reporting (was already supported)
+    DEV->>BR: PUBLISH smart/device/out/<id>
+    BR->>HA: retained state on discovery topic
+
+    Note over HA,DEV: Control (new)
+    HA->>BR: command on .../set
+    BR->>BR: reverse mapping ON -> True
+    BR->>DEV: PUBLISH smart/device/in/<id>
+```
+
 ### Home Assistant MQTT Discovery
 
 The bridge publishes HA discovery messages to:
@@ -134,7 +166,25 @@ handshake — both observed ports negotiate TLS-PSK.
 
 Devices do **not** fall back between ports. Blocking one endpoint makes the device go
 silent rather than try another, so a device can only be captured on the port it already
-uses.
+uses. The bridge therefore binds every port in `mqtt_psk_ports` at once, one listener
+each, all sharing the same device configuration.
+
+### Listener port vs device port
+
+The port the bridge *binds* need not be the port the device *dials* — DNAT rewrites the
+destination port, and Tuya devices do not check it. This matters on a Home Assistant
+host, where `core-mosquitto` already owns 8883 for MQTTS. The deployed add-on listens on
+**18883** and the router redirects the device's 8883 traffic there.
+
+```mermaid
+flowchart LR
+    D["GIEX timer<br/>dials cloud:8883"] -->|DNAT + MASQUERADE| R[Router]
+    R -->|"10.98.1.166:18883"| B["Bridge listener<br/>18883"]
+    S["Door sensors<br/>dial cloud:8886"] -->|DNAT + MASQUERADE| R
+    R -->|"10.98.1.166:8886"| C["Bridge listener<br/>8886"]
+    B --> M[HA MQTT discovery]
+    C --> M
+```
 
 ## References
 
