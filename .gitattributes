@@ -1,0 +1,11 @@
+# The add-on entrypoint runs inside a Linux container. A CRLF checkout on
+# Windows makes the shebang `#!/usr/bin/env bash\r`, which the container cannot
+# execute — it fails with "env: 'bash\r': No such file or directory" and the
+# add-on never starts. Pin LF for everything that is read by Linux.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
