@@ -25,6 +25,7 @@ import socket
 import ssl
 import struct
 import threading
+import time
 from typing import Any, Callable
 
 from .models import BridgeConfig, DecodedEvent, DeviceConfig
@@ -50,6 +51,13 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # MQTT constants
 # ---------------------------------------------------------------------------
+
+# Sessions silent for this long are closed. Battery sensors sleep without a
+# FIN, so without this every wake leaks a socket until select() hits
+# FD_SETSIZE and the loop dies (2026-11-02 incident).
+SESSION_IDLE_TIMEOUT_S = 120.0
+# Bound the blocking TLS-PSK handshake so one stalled peer can't freeze the loop.
+HANDSHAKE_TIMEOUT_S = 10.0
 
 # MQTT Control Packet types (high nibble of first byte)
 _MQTT_CONNECT = 0x10
@@ -233,13 +241,14 @@ class _DeviceSession:
     Not thread-safe — accessed only from the server's select loop thread.
     """
 
-    __slots__ = ("sock", "device_id", "buffer", "client_id")
+    __slots__ = ("sock", "device_id", "buffer", "client_id", "last_activity")
 
     def __init__(self, sock: ssl.SSLSocket, remote_addr: tuple[str, int]) -> None:
         self.sock = sock
         self.device_id: str | None = None
         self.buffer = bytearray()
         self.client_id: str | None = None
+        self.last_activity = time.monotonic()
         logger.info("New TLS-PSK connection from %s:%s", remote_addr[0], remote_addr[1])
 
 
@@ -534,6 +543,7 @@ class PskMqttServer:
             return
 
         try:
+            client.settimeout(HANDSHAKE_TIMEOUT_S)
             ssl_sock = self._wrap_psk(client)
             ssl_sock.setblocking(False)
             self._sessions.append(_DeviceSession(ssl_sock, addr))
@@ -559,6 +569,7 @@ class PskMqttServer:
         try:
             data = sock.recv(4096)
             if data:
+                session.last_activity = time.monotonic()
                 logger.debug(
                     "Read %d byte(s) from device_id=%s",
                     len(data),
@@ -618,9 +629,14 @@ class PskMqttServer:
         self._sessions.clear()
 
     def _prune_dead_sessions(self) -> None:
-        """Remove sessions whose sockets are no longer viable."""
+        """Remove sessions whose sockets errored or have gone idle."""
+        cutoff = time.monotonic() - SESSION_IDLE_TIMEOUT_S
         dead = []
         for session in self._sessions:
+            if session.last_activity < cutoff:
+                logger.debug("Closing idle session device_id=%s", session.device_id or "<unknown>")
+                dead.append(session)
+                continue
             try:
                 # Peek — if the socket reports an error, it is dead.
                 session.sock.getpeername()

@@ -194,3 +194,50 @@ class TestMqttPacketDispatch:
 
         assert called == [session]
         assert session.buffer == bytearray()
+
+
+# ---------------------------------------------------------------------------
+# Session pruning — regression for the 2026-11-02 socket leak
+# ---------------------------------------------------------------------------
+
+class TestPruneDeadSessions:
+    """Battery sensors sleep without a FIN; idle sessions must be closed or
+    their sockets leak until select() exceeds FD_SETSIZE and the loop dies."""
+
+    def _server_with_sessions(self, count):
+        import socket
+
+        from tuya_psk_bridge.server import _DeviceSession
+
+        server = object.__new__(PskMqttServer)
+        server._sessions = []
+        peers = []
+        for _ in range(count):
+            ours, theirs = socket.socketpair()
+            server._sessions.append(_DeviceSession(ours, ("10.98.1.1", 1)))
+            peers.append(theirs)
+        return server, peers
+
+    def test_idle_session_is_closed(self):
+        from tuya_psk_bridge.server import SESSION_IDLE_TIMEOUT_S
+
+        server, peers = self._server_with_sessions(2)
+        idle, fresh = server._sessions
+        idle.last_activity -= SESSION_IDLE_TIMEOUT_S + 1
+
+        server._prune_dead_sessions()
+
+        assert server._sessions == [fresh]
+        assert idle.sock.fileno() == -1
+        assert fresh.sock.fileno() != -1
+        for s in [fresh.sock, *peers]:
+            s.close()
+
+    def test_active_session_survives(self):
+        server, peers = self._server_with_sessions(1)
+
+        server._prune_dead_sessions()
+
+        assert len(server._sessions) == 1
+        for s in [server._sessions[0].sock, *peers]:
+            s.close()
